@@ -1,0 +1,19 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/**/*.js": {
+      "includeFiles": "README.md",
+      "maxDuration": 60
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/health",
+      "destination": "/api/webhook"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/api/webhook"
+    }
+  ]
+}

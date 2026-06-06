@@ -1,0 +1,31 @@
+{
+  "deploy": {
+    "install":"",
+    "build":"",
+    "runtime": {
+      "mode": "dynamic",
+      "entrypoint": "src/deno.js"
+    },
+    "org": "",
+    "app": "transcribot"
+  },
+  "nodeModulesDir": "auto",
+  "tasks": {
+    "start": "deno serve --port 3000 src/deno.js",
+    "dev": "deno serve --watch --port 3000 src/deno.js",
+    "set-webhook": "deno run --allow-net --allow-env --allow-read scripts/ops_set_webhook.js",
+    "set-avatar": "deno run --allow-net --allow-env --allow-read scripts/ops_set_avatar.js",
+    "test:remote": "deno run --allow-net --allow-read tests/remote.js",
+    "test:payload": "deno run --allow-read scripts/dev_test_webhook.js",
+    "test:localization": "deno test --allow-read tests/localization.mjs",
+    "test:framework": "deno test --allow-read --allow-write --allow-env --allow-run tests/framework/*.mjs",
+    "test:scenarios": "deno test --allow-read --allow-write --allow-env --allow-run tests/scenarios/*.mjs",
+    "test:bot": "deno test --allow-read --allow-write --allow-env --allow-run tests/bot/*.mjs",
+    "test": "deno task check && deno test --allow-read --allow-write --allow-env --allow-run tests/scenarios/*.mjs tests/bot/*.mjs tests/framework/*.mjs tests/localization.mjs tests/github_fork_sync.mjs",
+    "coverage": "deno test --coverage --allow-read --allow-write --allow-env --allow-run tests/scenarios/*.mjs tests/bot/*.mjs tests/framework/*.mjs tests/localization.mjs tests/github_fork_sync.mjs",
+    "check": "deno check api/**/*.js lib/**/*.js src/**/*.js scripts/**/*.js tests/**/*.js netlify/**/*.js",
+    "lint": "eslint ."
+  }
+}
+
+
