@@ -5,6 +5,8 @@ const pkg = require('../../package.json');
 
 exports.handler = async function(event, context) {
   await import('../../lib/core.js'); // registers HTTP routes and config builder via side-effects
+  const { connectNetlifyKv } = await import('../../lib/kv.js');
+  await connectNetlifyKv(event);
   const { handleNetlifyRequest } = await import('../../lib/framework/adapters.js');
   return handleNetlifyRequest(event, context, { BOT_VERSION: pkg.version });
 };

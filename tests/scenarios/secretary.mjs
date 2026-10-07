@@ -1019,7 +1019,45 @@ describe('Secretary Scenarios', () => {
     assert.match(toChat[0].json.text, /что думаешь\?/);
     const toOwner = sentTo('11111').map(c => c.json.text);
     assert.ok(toOwner.some(t => /📝/.test(t) && /\*Тема\*/.test(t)), 'Summary sent privately with single-asterisk bold');
-    assert.ok(toOwner.some(t => /💬/.test(t) && /```\nОтвет два\n```/.test(t)), 'Reply options sent as copyable code blocks');
+    assert.ok(toOwner.some(t => /💬/.test(t) && /```2-\nОтвет два\n```/.test(t)), 'Reply options sent as labelled code blocks');
+  });
+
+  test('Reply buttons: option goes into the business chat as a reply, "more" regenerates', async () => {
+    await runBusinessVoiceWithWhisper(20054, whisperLong, {}, chatMock({ polished: 'x'.repeat(400), insights: { summary: '', replies: ['Ответ один', 'Ответ два', 'Ответ три'] } }));
+    const optionsMsg = sentTo('11111').find(c => /💬/.test(c.json.text));
+    const rows = optionsMsg.json.reply_markup.inline_keyboard;
+    assert.deepEqual(rows[0].map(b => b.text), ['1', '2', '3']);
+    let pressId = 30000;
+    const press = async (data, fromId = 11111, chatResponse = null) => {
+      clearHistory();
+      pressId++;
+      const baseFetch = globalThis.fetch;
+      if (chatResponse) globalThis.fetch = async (url, options) => url.toString().includes('/chat/completions') ? chatResponse(url, options) : baseFetch(url, options);
+      try {
+        await handleWebhook(createReq({ update_id: pressId, callback_query: {
+          id: `cb_${pressId}`, from: { id: fromId, first_name: 'Owner' }, data,
+          message: { message_id: 777, chat: { id: 11111, type: 'private' } }
+        } }, { owner: '12345', secretary: 'on' }), MOCK_CONFIG, MOCK_CTX);
+      } finally {
+        globalThis.fetch = baseFetch;
+      }
+    };
+
+    await press(rows[0][1].callback_data, 55555);
+    assert.equal(sentTo('98765').length, 0, 'Strangers cannot send options');
+
+    await press(rows[0][1].callback_data);
+    const sent = sentTo('98765');
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].json.text, 'Ответ два');
+    assert.equal(sent[0].json.business_connection_id, 'conn_123');
+    assert.equal(sent[0].json.reply_parameters.message_id, 20054);
+    assert.ok(recordedCalls.some(c => c.url.includes('/editMessageReplyMarkup')), 'Keyboard replaced with the sent mark');
+
+    await press(rows[1][0].callback_data, 11111, chatMock({ polished: '', insights: { replies: ['Новый один', 'Новый два', 'Новый три'] } }));
+    const edit = recordedCalls.find(c => c.url.includes('/editMessageText'));
+    assert.match(edit.json.text, /```1-\nНовый один\n```/);
+    assert.equal(edit.json.reply_markup.inline_keyboard[0].length, 3);
   });
 
   test('Output modes: switched off summary/replies and transcript-to-chat', async () => {
