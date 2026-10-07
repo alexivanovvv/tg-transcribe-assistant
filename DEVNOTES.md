@@ -151,6 +151,10 @@ To ensure first-class support for Deno Deploy, the project includes a `deno.json
 
 ---
 
+### Lost segment repair (`lib/transcriber.js`, `lib/ogg.js`)
+
+Whisper sometimes collapses a ~30 s window of real speech into a couple of words (often a term from `WHISPER_PROMPT`, e.g. "Claude Codem") or a subtitle credit ("Субтитры делал DimaTorzok"). After the main call, segments that are a known hallucination or have < 4 letters/s over >= 6 s are cut out of the Ogg Opus file (page-level slicing, no ffmpeg) and re-transcribed without the prompt, up to 3 ranges in parallel. Costs one extra Whisper request (~1 s) only when something was lost.
+
 ### LLM extras (`lib/insights.js`)
 Groq chat model `qwen/qwen3.8-27b` (override: `INSIGHTS_MODEL`) is fast enough (~1 s) to fit cleanup + extras into the 10 s function budget; `gpt-oss-120b` took 3-6 s. On HTTP errors (e.g. 429 - Groq free tier is 8k tokens/min per model) the call retries once on `gpt-oss-120b`, which has its own rate-limit bucket; timeouts are not retried because the time budget is already spent. Insights start in parallel with the cleanup and are delivered after the transcript. Usage reality check (2026-10): ~30 incoming voices/month, max 6/day, so limits are not a concern.
 
