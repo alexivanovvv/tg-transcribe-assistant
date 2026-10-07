@@ -1022,11 +1022,13 @@ describe('Secretary Scenarios', () => {
     assert.ok(toOwner.some(t => /💬/.test(t) && /```2-\nОтвет два\n```/.test(t)), 'Reply options sent as labelled code blocks');
   });
 
-  test('Reply buttons: option goes into the business chat as a reply, "more" regenerates', async () => {
+  test('Reply buttons: only "more options", nothing is ever sent on the owner\'s behalf', async () => {
     await runBusinessVoiceWithWhisper(20054, whisperLong, {}, chatMock({ polished: 'x'.repeat(400), insights: { summary: '', replies: ['Ответ один', 'Ответ два', 'Ответ три'] } }));
     const optionsMsg = sentTo('11111').find(c => /💬/.test(c.json.text));
     const rows = optionsMsg.json.reply_markup.inline_keyboard;
-    assert.deepEqual(rows[0].map(b => b.text), ['1', '2', '3']);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].length, 1);
+    assert.match(rows[0][0].callback_data, /^rg:/);
     let pressId = 30000;
     const press = async (data, fromId = 11111, chatResponse = null) => {
       clearHistory();
@@ -1042,22 +1044,19 @@ describe('Secretary Scenarios', () => {
         globalThis.fetch = baseFetch;
       }
     };
+    const id = rows[0][0].callback_data.split(':')[1];
 
-    await press(rows[0][1].callback_data, 55555);
-    assert.equal(sentTo('98765').length, 0, 'Strangers cannot send options');
+    // Buttons left on older messages do nothing
+    await press(`rp:${id}:1`);
+    assert.equal(sentTo('98765').length, 0, 'Old "send option" buttons send nothing');
 
-    await press(rows[0][1].callback_data);
-    const sent = sentTo('98765');
-    assert.equal(sent.length, 1);
-    assert.equal(sent[0].json.text, 'Ответ два');
-    assert.equal(sent[0].json.business_connection_id, 'conn_123');
-    assert.equal(sent[0].json.reply_parameters.message_id, 20054);
-    assert.ok(recordedCalls.some(c => c.url.includes('/editMessageReplyMarkup')), 'Keyboard replaced with the sent mark');
+    await press(rows[0][0].callback_data, 55555, chatMock({ polished: '', insights: { replies: ['X', 'Y', 'Z'] } }));
+    assert.ok(!recordedCalls.some(c => c.url.includes('/editMessageText')), 'Strangers cannot regenerate');
 
-    await press(rows[1][0].callback_data, 11111, chatMock({ polished: '', insights: { replies: ['Новый один', 'Новый два', 'Новый три'] } }));
+    await press(rows[0][0].callback_data, 11111, chatMock({ polished: '', insights: { replies: ['Новый один', 'Новый два', 'Новый три'] } }));
     const edit = recordedCalls.find(c => c.url.includes('/editMessageText'));
     assert.match(edit.json.text, /```1-\nНовый один\n```/);
-    assert.equal(edit.json.reply_markup.inline_keyboard[0].length, 3);
+    assert.equal(sentTo('98765').length, 0, 'Regenerating never writes to the conversation');
   });
 
   test('Output modes: switched off summary/replies and transcript-to-chat', async () => {
