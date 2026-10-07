@@ -61,6 +61,7 @@ https://your-bot.example.com/api/webhook?groups=off&lang=ru&model=whisper-large-
 | `notify_conn` | `on` / `off` | `on` (absent = `on`) | Sends owner an alert on Telegram Business connection changes. |
 | `notify_err` | `on` / `off` | `on` (absent = `on`) | Sends owner an alert if any transcription request fails. |
 | `verbose` | `on` / `off` | `off` | Appends technical file details to transcription replies. |
+| `secpriv` | `on` / `off` | `off` | Secretary private delivery: transcriptions of business messages are sent to the owner's private chat with the bot instead of the business chat, so the chat partner does not see them. Verified in `tests/scenarios/secretary.mjs`. |
 | `prompt` | URL-encoded string | (absent = uses `WHISPER_PROMPT` env, or no prompt) | [Custom][Whisper prompting guide] [Whisper] prompt (max ~224 tokens). Empty (`prompt=`) disables prompt. Note: When saved in the webhook URL, the prompt is truncated from the left (keeping the end) to fit within the [~224][OpenAI Speech to Text Guide] tokens limit. |
 | `OWNER` | User ID or Username | (empty) | Pre-configured owner ID/username (env variable `OWNER`) to restrict dynamic registration hijacking. |
 

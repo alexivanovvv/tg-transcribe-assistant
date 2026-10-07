@@ -9,6 +9,7 @@ import {
   clearHistory,
   assertMessageSent,
   assertNoMessageSent,
+  recordedCalls,
   setupFetchMock
 } from './helper.mjs';
 
@@ -37,6 +38,44 @@ describe('Secretary Scenarios', () => {
     await handleWebhook(req, MOCK_CONFIG, MOCK_CTX);
     await new Promise(resolve => setTimeout(resolve, 50));
     assertMessageSent('98765', 'mock voice transcription');
+  });
+
+  // ----------------------------------------------------
+  // Secretary Private Mode (secpriv=on): transcription goes to owner only
+  // ----------------------------------------------------
+  test('Secretary private mode delivers transcription to owner chat, not the business chat', async () => {
+    const update = {
+      update_id: 1103,
+      business_message: {
+        message_id: 303,
+        chat: { id: 98765, type: 'private', first_name: 'Friend' },
+        from: { id: 98765, first_name: 'Friend' },
+        business_connection_id: 'conn_123',
+        voice: { file_id: 'voice_file_secpriv', file_unique_id: 'uniq_secpriv', file_size: 1000, duration: 4 }
+      }
+    };
+    const baseFetch = globalThis.fetch;
+    globalThis.fetch = async (url, options) => {
+      if (url.toString().includes('/getWebhookInfo')) {
+        return {
+          ok: true, status: 200, json: async () => ({
+            ok: true, result: { url: 'https://example.com/api/webhook?owner=12345&secpriv=on', allowed_updates: ['message', 'business_message'] }
+          })
+        };
+      }
+      return baseFetch(url, options);
+    };
+    try {
+      const req = createReq(update, { owner: '12345', secretary: 'on', secpriv: 'on' });
+      await handleWebhook(req, MOCK_CONFIG, MOCK_CTX);
+      await new Promise(resolve => setTimeout(resolve, 200));
+      assertMessageSent('12345', /Friend[\s\S]*mock voice transcription/);
+      const leaked = recordedCalls.find(call => call.url.includes('/sendMessage') &&
+        (String(call.json?.chat_id) === '98765' || call.json?.business_connection_id));
+      assert.equal(leaked, undefined, 'Nothing must be sent into the business chat');
+    } finally {
+      globalThis.fetch = baseFetch;
+    }
   });
 
   // ----------------------------------------------------
