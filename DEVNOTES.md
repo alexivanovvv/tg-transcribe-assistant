@@ -155,6 +155,8 @@ To ensure first-class support for Deno Deploy, the project includes a `deno.json
 
 With `ELEVENLABS_API_KEY` set, ElevenLabs Scribe (`SCRIBE_MODEL`, default `scribe_v2`) transcribes first: noticeably more accurate on conversational Russian mixed with English (e.g. "в кабинете", "до семи, семи тридцати" where Whisper turbo gave "кг"). Scribe words are grouped into sentence segments with mean word log-probability, so `assessTranscription` works unchanged. Any Scribe error (quota, 401, timeout 7 s) falls back to Whisper on Groq; empty Scribe text (silence) is not retried, Whisper hallucinates there. Costs ElevenLabs plan minutes (~30 min/month of incoming voices). `WHISPER_PROMPT` applies only to Whisper.
 
+Scribe also gets `keyterms` (names, brands, jargon) from the KV key `keyterms` - a JSON array kept in Netlify Blobs, not in the repo (private names) or env (4 KB cap). Upload with `npx netlify blobs:set ponch keyterms --input terms.json`; cached per instance for 10 min, invalid entries (>=50 chars, >5 words, `<>{}[]\`) dropped. Billing: keyterms add ~20%, and with >100 terms every request is billed at least 20 s.
+
 ### Lost segment repair (`lib/transcriber.js`, `lib/ogg.js`)
 
 Whisper sometimes collapses a ~30 s window of real speech into a couple of words (often a term from `WHISPER_PROMPT`, e.g. "Claude Codem") or a subtitle credit ("Субтитры делал DimaTorzok"). After the main call, segments that are a known hallucination or have < 4 letters/s over >= 6 s are cut out of the Ogg Opus file (page-level slicing, no ffmpeg) and re-transcribed without the prompt, up to 3 ranges in parallel. Costs one extra Whisper request (~1 s) only when something was lost.
