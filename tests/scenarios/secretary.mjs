@@ -41,6 +41,46 @@ describe('Secretary Scenarios', () => {
   });
 
   // ----------------------------------------------------
+  // ALLOWED_USERS whitelist for business connections
+  // ----------------------------------------------------
+  test('Whitelist: business connection of a non-whitelisted account is ignored', async () => {
+    const update = {
+      update_id: 1203,
+      business_message: {
+        message_id: 403,
+        chat: { id: 98765, type: 'private' },
+        from: { id: 98765, first_name: 'Friend' },
+        business_connection_id: 'conn_123',
+        voice: { file_id: 'voice_file_wl', file_unique_id: 'uniq_wl_1', file_size: 1000, duration: 4 }
+      }
+    };
+    const baseFetch = globalThis.fetch;
+    globalThis.fetch = async (url, options) => {
+      if (url.toString().includes('/getWebhookInfo')) {
+        return {
+          ok: true, status: 200, json: async () => ({
+            ok: true, result: { url: 'https://example.com/api/webhook?owner=12345', allowed_updates: ['message', 'business_message'] }
+          })
+        };
+      }
+      return baseFetch(url, options);
+    };
+    try {
+      // Mocked connection belongs to user 11111 (not owner, not listed)
+      await handleWebhook(createReq(update, { owner: '12345' }), { ...MOCK_CONFIG, allowedUsers: ['someone_else'] }, MOCK_CTX);
+      await new Promise(resolve => setTimeout(resolve, 50));
+      assertNoMessageSent();
+
+      const allowedUpdate = { update_id: 1204, business_message: { ...update.business_message, message_id: 404, voice: { ...update.business_message.voice, file_unique_id: 'uniq_wl_2' } } };
+      await handleWebhook(createReq(allowedUpdate, { owner: '12345' }), { ...MOCK_CONFIG, allowedUsers: ['11111'] }, MOCK_CTX);
+      await new Promise(resolve => setTimeout(resolve, 50));
+      assertMessageSent('98765', 'mock voice transcription');
+    } finally {
+      globalThis.fetch = baseFetch;
+    }
+  });
+
+  // ----------------------------------------------------
   // Secretary Private Mode (secpriv=on): transcription goes to owner only
   // ----------------------------------------------------
   test('Secretary private mode delivers transcription to owner chat, not the business chat', async () => {

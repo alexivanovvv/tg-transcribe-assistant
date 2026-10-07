@@ -39,6 +39,51 @@ describe('Core Scenarios', () => {
   });
 
   // ----------------------------------------------------
+  // ALLOWED_USERS whitelist
+  // ----------------------------------------------------
+  test('Whitelist: owner and listed username are served, others are ignored', async () => {
+    const baseFetch = globalThis.fetch;
+    globalThis.fetch = async (url, options) => {
+      if (url.toString().includes('/getWebhookInfo')) {
+        return {
+          ok: true, status: 200, json: async () => ({
+            ok: true, result: { url: 'https://example.com/api/webhook?owner=12345', allowed_updates: ['message', 'business_message'] }
+          })
+        };
+      }
+      return baseFetch(url, options);
+    };
+    try {
+      const config = { ...MOCK_CONFIG, allowedUsers: ['friend_user'] };
+      const voiceFrom = (updateId, user) => ({
+        update_id: updateId,
+        message: {
+          message_id: updateId,
+          chat: { id: user.id, type: 'private' },
+          from: { is_bot: false, first_name: 'User', ...user },
+          voice: { file_id: `voice_${updateId}`, file_size: 1000, duration: 5 }
+        }
+      });
+
+      await handleWebhook(createReq(voiceFrom(5101, { id: 12345 }), { owner: '12345' }), config, MOCK_CTX);
+      await new Promise(resolve => setTimeout(resolve, 50));
+      assertMessageSent('12345', 'mock voice transcription');
+      clearHistory();
+
+      await handleWebhook(createReq(voiceFrom(5102, { id: 22222, username: 'Friend_User' }), { owner: '12345' }), config, MOCK_CTX);
+      await new Promise(resolve => setTimeout(resolve, 50));
+      assertMessageSent('22222', 'mock voice transcription');
+      clearHistory();
+
+      await handleWebhook(createReq(voiceFrom(5103, { id: 33333, username: 'stranger' }), { owner: '12345' }), config, MOCK_CTX);
+      await new Promise(resolve => setTimeout(resolve, 50));
+      assertNoMessageSent();
+    } finally {
+      globalThis.fetch = baseFetch;
+    }
+  });
+
+  // ----------------------------------------------------
   // Private Chat Unsupported Document (Should Warn)
   // ----------------------------------------------------
   test('Private chat zip document replies with Unsupported Format warning', async () => {
