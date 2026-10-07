@@ -188,7 +188,7 @@ describe('Bot unit_transcriber', () => {
     assert.ok(res.error.includes('empty response'));
   });
 
-  test('Language, prompt overrides, and text post-processing (formatting dashes and sentences)', async () => {
+  test('Language, prompt overrides, and text post-processing (single paragraph for short text)', async () => {
     let sentFormData = null;
     globalThis.fetch = async (url, options) => {
       if (url.includes('/getFile')) {
@@ -216,8 +216,8 @@ describe('Bot unit_transcriber', () => {
     assert.equal(res.language, 'ru');
     assert.equal(sentFormData.get('language'), 'ru');
     assert.equal(sentFormData.get('prompt'), 'Override prompt');
-    assert.ok(res.text.includes('\n— How are you?'));
-    assert.ok(res.text.includes('Hello world.\n'));
+    // Short text stays a single paragraph; dashes stay inline
+    assert.equal(res.text, 'Hello world. — How are you? Fine thanks.');
   });
 
   test('Internal exception during fetch is caught gracefully', async () => {

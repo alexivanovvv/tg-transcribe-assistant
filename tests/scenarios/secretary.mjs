@@ -334,7 +334,7 @@ describe('Secretary Scenarios', () => {
   // ----------------------------------------------------
   // Client executing public command (/process) in secretary mode is served
   // ----------------------------------------------------
-  test('Client executing public command (/process) in secretary mode is served', async () => {
+  test('Client /process without audio in secretary mode posts nothing to the chat (quiet chat)', async () => {
     let replyRequiredSent = false;
     const baseFetch = globalThis.fetch;
     globalThis.fetch = async (url, options) => {
@@ -361,7 +361,7 @@ describe('Secretary Scenarios', () => {
       };
       await handleWebhook(createReq(update, { owner: '12345', secretary: 'on' }), MOCK_CONFIG, MOCK_CTX);
       await new Promise(resolve => setTimeout(resolve, 50));
-      assert.ok(replyRequiredSent, 'Should send replyRequired warning to Client executing public command in secretary mode');
+      assert.ok(!replyRequiredSent, 'Quiet chat: no replyRequired warning must be posted in the business chat');
     } finally {
       globalThis.fetch = baseFetch;
     }
@@ -737,7 +737,7 @@ describe('Secretary Scenarios', () => {
   // ----------------------------------------------------
   // Guest message executing command /help uses answerGuestQuery
   // ----------------------------------------------------
-  test('Guest message executing command /help uses answerGuestQuery', async () => {
+  test('Guest message command /help posts nothing (quiet chat)', async () => {
     let answerGuestQueryCalled = false;
     const baseFetch = globalThis.fetch;
     globalThis.fetch = async (url, options) => {
@@ -772,7 +772,7 @@ describe('Secretary Scenarios', () => {
       const res = await handleWebhook(createReq(update, { owner: '12345', secretary: 'on', guest: 'on' }), MOCK_CONFIG, MOCK_CTX);
       assert.equal(res.status, 200, 'Webhook response should be 200 OK');
       await new Promise(resolve => setTimeout(resolve, 200));
-      assert.equal(answerGuestQueryCalled, true, 'Should respond to guest /help command via answerGuestQuery');
+      assert.equal(answerGuestQueryCalled, false, 'Quiet chat: guest commands must not be answered');
     } finally {
       globalThis.fetch = baseFetch;
     }
@@ -781,7 +781,7 @@ describe('Secretary Scenarios', () => {
   // ----------------------------------------------------
   // Client starting mention (@testbot) without reply gets replyRequired
   // ----------------------------------------------------
-  test('Client starting mention (@testbot) without reply in secretary mode gets replyRequired', async () => {
+  test('Client starting mention (@testbot) without reply in secretary mode posts nothing (quiet chat)', async () => {
     let fetchCalled = false;
     const baseFetch = globalThis.fetch;
     globalThis.fetch = async (url, options) => {
@@ -821,7 +821,7 @@ describe('Secretary Scenarios', () => {
       const res = await handleWebhook(createReq(update, { owner: '12345', secretary: 'on' }), MOCK_CONFIG, MOCK_CTX);
       assert.equal(res.status, 200, 'Webhook response should be 200 OK');
       await new Promise(resolve => setTimeout(resolve, 200));
-      assert.equal(fetchCalled, true, 'Should respond with replyRequired warning');
+      assert.equal(fetchCalled, false, 'Quiet chat: no replyRequired warning must be posted');
     } finally {
       globalThis.fetch = baseFetch;
     }
@@ -916,5 +916,70 @@ describe('Secretary Scenarios', () => {
     } finally {
       globalThis.fetch = baseFetch;
     }
+  });
+
+  // ----------------------------------------------------
+  // Quiet chat: business chats only ever get a good transcription
+  // ----------------------------------------------------
+  const runBusinessVoiceWithWhisper = async (updateId, whisperResponse) => {
+    const baseFetch = globalThis.fetch;
+    globalThis.fetch = async (url, options) => {
+      if (url.toString().includes('/audio/transcriptions')) return whisperResponse();
+      return baseFetch(url, options);
+    };
+    try {
+      const update = {
+        update_id: updateId,
+        business_message: {
+          message_id: updateId,
+          chat: { id: 98765, type: 'private' },
+          from: { id: 98765, first_name: 'Friend' },
+          business_connection_id: 'conn_123',
+          voice: { file_id: `voice_quiet_${updateId}`, file_unique_id: `uq_quiet_${updateId}`, file_size: 1000, duration: 4 }
+        }
+      };
+      await handleWebhook(createReq(update, { owner: '12345', secretary: 'on' }), MOCK_CONFIG, MOCK_CTX);
+      await new Promise(resolve => setTimeout(resolve, 50));
+    } finally {
+      globalThis.fetch = baseFetch;
+    }
+  };
+
+  test('Quiet chat: transcription error posts nothing to the business chat (owner is notified)', async () => {
+    await runBusinessVoiceWithWhisper(20001, () => ({ ok: false, status: 500, text: async () => 'boom', json: async () => ({}) }));
+    const toChat = recordedCalls.filter(call => call.url.includes('/sendMessage') && String(call.json?.chat_id) === '98765');
+    assert.equal(toChat.length, 0, 'No error message must reach the business chat');
+    assertMessageSent('12345', /Transcription Error|boom/i);
+  });
+
+  test('Quiet chat: low-quality transcription (noise / hallucination) posts nothing', async () => {
+    for (const [i, text] of [['1', '[музыка]'], ['2', 'Продолжение следует...'], ['3', 'Субтитры сделал DimaTorzok']]) {
+      clearHistory();
+      await runBusinessVoiceWithWhisper(20010 + Number(i), () => ({ ok: true, status: 200, json: async () => ({ text }), text: async () => JSON.stringify({ text }) }));
+      assertNoMessageSent();
+    }
+  });
+
+  test('Quiet chat: Whisper non-speech segments suppress the transcription', async () => {
+    const body = { text: 'Ага.', segments: [{ start: 0, end: 3, no_speech_prob: 0.9, avg_logprob: -1.5 }] };
+    await runBusinessVoiceWithWhisper(20021, () => ({ ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) }));
+    assertNoMessageSent();
+  });
+
+  test('Quiet chat: good transcription is posted as italic text after the emoji', async () => {
+    const body = { text: 'Привет, это нормальный голосовой.', segments: [{ start: 0, end: 3, no_speech_prob: 0.01, avg_logprob: -0.2 }] };
+    await runBusinessVoiceWithWhisper(20031, () => ({ ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) }));
+    const sent = recordedCalls.find(call => call.url.includes('/sendMessage') && String(call.json?.chat_id) === '98765');
+    assert.ok(sent, 'Transcription must be posted');
+    assert.equal(sent.json.text, '❇️ _Привет, это нормальный голосовой\\._');
+    assert.equal(sent.json.reply_to_message_id, 20031);
+  });
+
+  test('Quiet chat: doubtful transcription goes privately to the owner, not to the chat', async () => {
+    const body = { text: 'Кажется, речь про встречу завтра.', segments: [{ start: 0, end: 3, no_speech_prob: 0.1, avg_logprob: -0.9, compression_ratio: 1.5 }] };
+    await runBusinessVoiceWithWhisper(20041, () => ({ ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) }));
+    const toChat = recordedCalls.filter(call => call.url.includes('/sendMessage') && String(call.json?.chat_id) === '98765');
+    assert.equal(toChat.length, 0, 'Doubtful transcription must not reach the business chat');
+    assertMessageSent('12345', /🤔[\s\S]*встречу завтра/);
   });
 });

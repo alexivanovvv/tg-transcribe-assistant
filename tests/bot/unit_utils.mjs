@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import {
   estimateTokens,
   truncateTokensFromLeft,
-  formatUserMarkdown
+  formatUserMarkdown,
+  formatParagraphs,
+  isLowQualityTranscription,
+  assessTranscription
 } from '../../lib/utils.js';
 import { getAvailableModels } from '../../lib/menus.js';
 import { createConfig } from '../../lib/core.js';
@@ -114,5 +117,38 @@ describe('Bot unit_utils', () => {
   test('formatUserMarkdown formatting', () => {
     const u1 = { first_name: 'John', last_name: 'Doe', username: 'johndoe', id: 123 };
     assert.equal(formatUserMarkdown(u1), '[John Doe](tg://user?id=123) \\(@johndoe\\)');
+  });
+
+  test('formatParagraphs groups sentences into blank-line separated paragraphs', () => {
+    assert.equal(formatParagraphs('Hello world. How are you?'), 'Hello world. How are you?');
+    const sentence = 'Это довольно длинное предложение про работу бота и расшифровку голосовых сообщений.';
+    const text = Array(8).fill(sentence).join(' ');
+    const result = formatParagraphs(text);
+    const paragraphs = result.split('\n\n');
+    assert.ok(paragraphs.length >= 2, 'Long text should be split into paragraphs');
+    assert.ok(paragraphs.every(p => p.endsWith('.')), 'Paragraphs break only at sentence ends');
+    assert.equal(result.replace(/\n\n/g, ' '), text);
+  });
+
+  test('isLowQualityTranscription detects empty, noise and hallucinated text', () => {
+    assert.equal(isLowQualityTranscription(''), true);
+    assert.equal(isLowQualityTranscription('...'), true);
+    assert.equal(isLowQualityTranscription('[музыка] (смех)'), true);
+    assert.equal(isLowQualityTranscription('Продолжение следует...'), true);
+    assert.equal(isLowQualityTranscription('Thank you.'), true);
+    assert.equal(isLowQualityTranscription('Редактор субтитров А.Семкин'), true);
+    assert.equal(isLowQualityTranscription('Ок', [{ start: 0, end: 2, no_speech_prob: 0.8, avg_logprob: -1.3 }]), true);
+    assert.equal(isLowQualityTranscription('Слушай, давай завтра созвонимся.'), false);
+    assert.equal(isLowQualityTranscription('Да', [{ start: 0, end: 1, no_speech_prob: 0.1, avg_logprob: -0.3 }]), false);
+  });
+
+  test('assessTranscription separates good, doubtful and bad results', () => {
+    const seg = (avg_logprob, no_speech_prob = 0.05, compression_ratio = 1.6) => [{ start: 0, end: 5, avg_logprob, no_speech_prob, compression_ratio }];
+    assert.equal(assessTranscription('Нормальная чёткая речь.', seg(-0.15)), 'good');
+    assert.equal(assessTranscription('Нормальная чёткая речь.'), 'good');
+    assert.equal(assessTranscription('Что-то неразборчивое.', seg(-0.9)), 'doubtful');
+    assert.equal(assessTranscription('Повтор повтор повтор.', seg(-0.2, 0.05, 3.1)), 'doubtful');
+    assert.equal(assessTranscription('Шум.', seg(-1.8)), 'bad');
+    assert.equal(assessTranscription('Продолжение следует...', seg(-0.2)), 'bad');
   });
 });

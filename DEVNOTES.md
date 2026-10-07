@@ -163,6 +163,8 @@ To claim the bot ownership, the owner starts the bot in a private chat. The bot 
 
 ---
 
+* **Profile sync is commands-only**: the bot name and descriptions are set by hand in BotFather; automatic sync used to overwrite them on every setup/greeting/language change, so only the command list is synchronized now.
+
 ### 8. `/prompt` Command & Source Parsing
 The `/prompt` command is used to inject instruction cues into Whisper. The bot parses commands differently depending on three cases:
 
@@ -188,6 +190,7 @@ Intercepts messages in the owner's personal chats via `business_message` updates
 > **Terminology Clarification:** Although Secretary Mode is powered by the Telegram Business API (utilizing `business_message` updates), it has nothing in common with other Telegram Business automation features (such as Business Guest Mode). To avoid confusion, a "guest" (non-owner user) in regular individual or group chats is a standard user role and has absolutely no relation to Business Guest Mode or business connections.
 
 * **Silently Ignores Daily Chat**: To prevent the bot from spamming chat partners with error messages or default greetings, the bot runs silently and only processes voice notes that address the owner or are explicitly directed to the bot.
+* **Quiet Chats (business & guest)**: A chat with another person must never receive bot noise. Errors, notices (file too large, missing key, unsupported format), command replies and verbose footers are only logged or sent to the owner's private chat; the only thing posted there is a transcription that passed the quality check. Whisper invents text on silence, music and noise (e.g. "Продолжение следует...", subtitle credits), so `verbose_json` segment confidence plus a hallucination phrase list rates each result as good (posted), doubtful (sent privately to the owner, who decides) or bad (dropped) instead of embarrassing the owner in front of the chat partner. Behavior is pinned by the "Quiet chat" tests in `tests/scenarios/secretary.mjs`.
 * **Anti-loop Guard**: Suppresses auto-replies to other bots or non-addressed media notes to prevent loops.
 * **Guest/Secretary Deduplication**: When a user explicitly mentions or replies to the bot in a business chat, Telegram sends **both** a `business_message` (secretary) and a `guest_message` (guest mode) for the same event. To prevent a double response, the bot suppresses the `business_message` path for explicit mentions — but only when it is certain that a `guest_message` will follow, i.e., when Guest Mode is enabled **both** in local settings and at the BotFather level (`supports_guest_queries`). If either side has Guest Mode disabled, the bot processes the `business_message` normally instead.
 * **Telegram Business Connection Quirks & Permissions**: 

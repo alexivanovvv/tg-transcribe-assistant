@@ -29,6 +29,8 @@ describe('Bot unit_routing', () => {
     await setupBotProfile(MOCK_TOKEN);
     const setCmdCall = recordedCalls.find(c => c.url.includes('/setMyCommands'));
     assert.ok(setCmdCall, 'setMyCommands should be called during profile sync');
+    const profileCall = recordedCalls.find(c => /\/setMy(Name|Description|ShortDescription)/.test(c.url));
+    assert.ok(!profileCall, 'Bot name and descriptions are managed manually and must not be overwritten');
 
     const avatarPath = path.join(process.cwd(), 'avatar.jpg');
     try {
