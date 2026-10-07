@@ -921,10 +921,14 @@ describe('Secretary Scenarios', () => {
   // ----------------------------------------------------
   // Quiet chat: business chats only ever get a good transcription
   // ----------------------------------------------------
-  const runBusinessVoiceWithWhisper = async (updateId, whisperResponse, extraQuery = {}) => {
+  const runBusinessVoiceWithWhisper = async (updateId, whisperResponse, extraQuery = {}, chatResponse = null) => {
     const baseFetch = globalThis.fetch;
     globalThis.fetch = async (url, options) => {
       if (url.toString().includes('/audio/transcriptions')) return whisperResponse();
+      if (chatResponse && url.toString().includes('/chat/completions')) {
+        recordedCalls.push({ url: url.toString() });
+        return chatResponse(url, options);
+      }
       if (Object.keys(extraQuery).length && url.toString().includes('/getWebhookInfo')) {
         const query = new URLSearchParams({ owner: '12345', secretary: 'on', ...extraQuery });
         return { ok: true, status: 200, json: async () => ({ ok: true, result: { url: `https://example.com/api/webhook?${query}`, allowed_updates: ['message', 'business_message'] } }) };
@@ -992,6 +996,43 @@ describe('Secretary Scenarios', () => {
     await runBusinessVoiceWithWhisper(20041, () => ({ ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) }));
     const toChat = recordedCalls.filter(call => call.url.includes('/sendMessage') && String(call.json?.chat_id) === '98765');
     assert.equal(toChat.length, 0, 'Doubtful transcription must not reach the business chat');
-    assertMessageSent('12345', /🤔[\s\S]*встречу завтра/);
+    // Goes to the connected business account owner (mock connection user 11111)
+    assertMessageSent('11111', /🤔[\s\S]*встречу завтра/);
+  });
+
+  // Output modes: Groq chat completions are mocked by request kind (cleanup vs JSON insights)
+  const chatMock = ({ polished, insights }) => async (url, options) => {
+    const req = JSON.parse(options.body);
+    const content = req.response_format ? JSON.stringify(insights) : polished;
+    return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content } }] }), text: async () => content };
+  };
+  const longText = 'ну вот смотри '.repeat(30) + 'что думаешь';
+  const longBody = { text: longText, segments: [{ start: 0, end: 30, no_speech_prob: 0.01, avg_logprob: -0.2 }] };
+  const whisperLong = () => ({ ok: true, status: 200, json: async () => longBody, text: async () => JSON.stringify(longBody) });
+  const sentTo = (chatId) => recordedCalls.filter(call => call.url.includes('/sendMessage') && String(call.json?.chat_id) === chatId);
+
+  test('Output modes: polished transcript to chat, summary and replies privately to the account owner', async () => {
+    const polished = 'Смотри. ' + 'Смотри, '.repeat(30) + 'что думаешь?';
+    await runBusinessVoiceWithWhisper(20051, whisperLong, {}, chatMock({ polished, insights: { summary: '🤝 **Тема**\n- **Суть:** проверка', replies: ['Ответ один', 'Ответ два', 'Ответ три'] } }));
+    const toChat = sentTo('98765');
+    assert.equal(toChat.length, 1, 'Only the transcript goes into the conversation');
+    assert.match(toChat[0].json.text, /что думаешь\?/);
+    const toOwner = sentTo('11111').map(c => c.json.text);
+    assert.ok(toOwner.some(t => /📝/.test(t) && /\*Тема\*/.test(t)), 'Summary sent privately with single-asterisk bold');
+    assert.ok(toOwner.some(t => /💬/.test(t) && /```\nОтвет два\n```/.test(t)), 'Reply options sent as copyable code blocks');
+  });
+
+  test('Output modes: switched off summary/replies and transcript-to-chat', async () => {
+    await runBusinessVoiceWithWhisper(20052, whisperLong, { sum: 'off', rep: 'off', tr: 'off', polish: 'off' }, chatMock({ polished: 'X', insights: { summary: 'S', replies: ['R'] } }));
+    assert.equal(sentTo('98765').length, 0, 'Transcript-to-chat is off');
+    const toOwner = sentTo('11111').map(c => c.json.text);
+    assert.equal(toOwner.length, 1, 'Owner gets only the transcript');
+    assert.match(toOwner[0], /ну вот смотри/, 'Polish off keeps the raw text');
+    assert.ok(!recordedCalls.some(c => c.url.includes('/chat/completions')), 'No LLM calls when all extras are off');
+  });
+
+  test('Output modes: cleanup that drifts in length falls back to the raw transcript', async () => {
+    await runBusinessVoiceWithWhisper(20053, whisperLong, { sum: 'off', rep: 'off' }, chatMock({ polished: 'Коротко.', insights: {} }));
+    assert.match(sentTo('98765')[0].json.text, /ну вот смотри/);
   });
 });

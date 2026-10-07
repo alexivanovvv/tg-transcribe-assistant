@@ -62,6 +62,10 @@ https://your-bot.example.com/api/webhook?groups=off&lang=ru&model=whisper-large-
 | `notify_err` | `on` / `off` | `on` (absent = `on`) | Sends owner an alert if any transcription request fails. |
 | `verbose` | `on` / `off` | `off` | Appends technical file details to transcription replies. |
 | `secpriv` | `on` / `off` | `off` | Secretary private delivery: transcriptions of business messages are sent to the owner's private chat with the bot instead of the business chat, so the chat partner does not see them. Verified in `tests/scenarios/secretary.mjs`. |
+| `fmt` | `sparkle` / `classic` / `abc` / `quote` / `expand` / `plain` | `sparkle` | Transcript message style, picked in `/format` (menu shows a live preview of every style). Rendering lives in `renderTranscriptChunk` (`lib/utils.js`); chunk splitting always reserves room for the longest (classic) header. Verified in `tests/bot/unit_formats.mjs`. |
+| `tr` | `on` / `off` | `on` | Output mode 1: post the transcript into the business chat. When off, the transcript goes privately to the account owner instead. |
+| `polish` | `on` / `off` | `on` | LLM cleanup (punctuation, sentences, fillers, phonetic English terms) before posting. Falls back to the raw transcript on error or when the result length drifts outside 0.6-1.3x, because a large drift means the model rewrote or truncated the speech. |
+| `sum` / `rep` | `on` / `off` | `on` | Output modes 2 and 3: summary (only for texts >= 300 chars) and three reply options, generated in one JSON call and sent only privately: to the connected business account owner for incoming business voices, or into the private chat for voices sent to the bot directly. Never into the conversation, and never to another account's owner, so a teammate's business chats cannot leak to the bot owner. |
 | `prompt` | URL-encoded string | (absent = uses `WHISPER_PROMPT` env, or no prompt) | [Custom][Whisper prompting guide] [Whisper] prompt (max ~224 tokens). Empty (`prompt=`) disables prompt. Note: When saved in the webhook URL, the prompt is truncated from the left (keeping the end) to fit within the [~224][OpenAI Speech to Text Guide] tokens limit. |
 | `ALLOWED_USERS` | Comma-separated user IDs / usernames | (empty = everyone) | Env-only access whitelist. The owner is always allowed; private, group and guest messages from others are ignored, as are business connections of non-listed accounts. Verified in `tests/scenarios/core.mjs` and `tests/scenarios/secretary.mjs`. |
 | `OWNER` | User ID or Username | (empty) | Pre-configured owner ID/username (env variable `OWNER`) to restrict dynamic registration hijacking. |
@@ -146,6 +150,9 @@ To ensure first-class support for Deno Deploy, the project includes a `deno.json
 * **Sandbox Permissions**: Running the test tasks in Deno requires basic security flags (`--allow-read`, `--allow-write`, `--allow-env`) to access environment configurations, write temporary test assets, and read localized assets.
 
 ---
+
+### LLM extras (`lib/insights.js`)
+Groq chat model `qwen/qwen3.8-27b` (override: `INSIGHTS_MODEL`) is fast enough (~1 s) to fit cleanup + extras into the 10 s function budget; `gpt-oss-120b` took 3-6 s. On HTTP errors (e.g. 429 - Groq free tier is 8k tokens/min per model) the call retries once on `gpt-oss-120b`, which has its own rate-limit bucket; timeouts are not retried because the time budget is already spent. Insights start in parallel with the cleanup and are delivered after the transcript. Usage reality check (2026-10): ~30 incoming voices/month, max 6/day, so limits are not a concern.
 
 ## Part II: Bot Logic & Command Handling
 
