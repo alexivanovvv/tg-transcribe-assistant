@@ -110,3 +110,54 @@ describe('Lost segment repair', () => {
     assert.equal(calls.length, 1);
   });
 });
+
+describe('ElevenLabs Scribe', () => {
+  const realFetch = globalThis.fetch;
+  after(() => { globalThis.fetch = realFetch; });
+
+  const word = (text, start, logprob = -0.05) => ({ text, start, end: start + 0.3, type: 'word', logprob });
+
+  async function run(scribeResponse) {
+    const calls = [];
+    globalThis.fetch = async (url, opts) => {
+      url = String(url);
+      if (url.includes('/getFile')) return new Response(JSON.stringify({ ok: true, result: { file_path: 'voice/a.oga', file_size: 1 } }));
+      if (url.includes('/file/bot')) return new Response(buildOgg(5));
+      calls.push(url);
+      if (url.includes('elevenlabs')) return scribeResponse();
+      return new Response(JSON.stringify({ text: 'Ответ от Whisper.', segments: [{ start: 0, end: 3, text: 'Ответ от Whisper.', avg_logprob: -0.2, no_speech_prob: 0.01 }] }));
+    };
+    const result = await transcribeAudio('id', { telegramBotToken: 't', whisperApiKey: 'k', elevenlabsApiKey: 'el' }, {});
+    return { result, calls };
+  }
+
+  test('is used first and its word confidence drives the quality rating', async () => {
+    const { result, calls } = await run(() => new Response(JSON.stringify({
+      text: 'Буду в кабинете до семи . Let me know.',
+      words: [word('Буду', 0), word('в', 0.4), word('кабинете', 0.6), word('до', 1), word('семи.', 1.2), word('Let', 2), word('me', 2.2), word('know.', 2.4)]
+    })));
+    assert.equal(calls.length, 1);
+    assert.equal(result.model, 'scribe_v2');
+    assert.equal(result.text, 'Буду в кабинете до семи. Let me know.');
+    assert.equal(result.quality, 'good');
+  });
+
+  test('low word confidence makes the result doubtful', async () => {
+    const { result } = await run(() => new Response(JSON.stringify({
+      text: 'Что-то невнятное.', words: [word('Что-то', 0, -1.2), word('невнятное.', 0.5, -0.9)]
+    })));
+    assert.equal(result.quality, 'doubtful');
+  });
+
+  test('falls back to Whisper when Scribe fails', async () => {
+    const { result, calls } = await run(() => new Response('quota exceeded', { status: 401 }));
+    assert.equal(calls.length, 2);
+    assert.equal(result.text, 'Ответ от Whisper.');
+  });
+
+  test('silence is not retried with Whisper', async () => {
+    const { result, calls } = await run(() => new Response(JSON.stringify({ text: '', words: [] })));
+    assert.equal(calls.length, 1);
+    assert.equal(result.ok, false);
+  });
+});

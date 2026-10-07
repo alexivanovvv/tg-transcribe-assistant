@@ -21,7 +21,7 @@ describe('Transcript formats', () => {
 
   test('each format renders its own shape', () => {
     const render = (format) => buildTranscriptionMessages('Привет. Как дела?', { header, format })[0];
-    assert.equal(render('sparkle'), '❇️ _Привет\\. Как дела?_');
+    assert.equal(render('sparkle'), '❇️\n\n_Привет\\. Как дела?_');
     assert.equal(render('classic'), `${header}\n\nПривет\\. Как дела?`);
     assert.equal(render('abc'), '🔤 Привет\\. Как дела?');
     assert.equal(render('quote'), '🎤\n>Привет\\. Как дела?');

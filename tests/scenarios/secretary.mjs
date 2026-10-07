@@ -979,7 +979,7 @@ describe('Secretary Scenarios', () => {
     await runBusinessVoiceWithWhisper(20031, () => ({ ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) }));
     const sent = recordedCalls.find(call => call.url.includes('/sendMessage') && String(call.json?.chat_id) === '98765');
     assert.ok(sent, 'Transcription must be posted');
-    assert.equal(sent.json.text, '❇️ _Привет, это нормальный голосовой\\._');
+    assert.equal(sent.json.text, '❇️\n\n_Привет, это нормальный голосовой\\._');
     assert.equal(sent.json.reply_to_message_id, 20031);
   });
 

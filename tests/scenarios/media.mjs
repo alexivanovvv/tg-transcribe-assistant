@@ -515,12 +515,12 @@ describe('Media Scenarios', () => {
       const chunk1Text = replies[0].json.text;
       assert.ok(chunk1Text.includes('1/2'), 'Chunk 1 should include 1/2 pagination');
       assert.ok(!chunk1Text.includes('Info: '), 'Chunk 1 should NOT include the verbose info footer');
-      assert.ok(chunk1Text.startsWith('❇️ \\[1/2\\] _'), 'Chunk 1 should start with the emoji header and italic text');
+      assert.ok(chunk1Text.startsWith('❇️ \\[1/2\\]\n\n_'), 'Chunk 1 should start with the emoji header and italic text');
 
       const chunk2Text = replies[1].json.text;
       assert.ok(chunk2Text.includes('2/2'), 'Chunk 2 should include 2/2 pagination');
       assert.ok(chunk2Text.includes('⚙️'), 'Chunk 2 should include the verbose info footer');
-      assert.ok(chunk2Text.startsWith('❇️ \\[2/2\\] _'), 'Chunk 2 should start with the emoji header and italic text');
+      assert.ok(chunk2Text.startsWith('❇️ \\[2/2\\]\n\n_'), 'Chunk 2 should start with the emoji header and italic text');
     } finally {
       globalThis.fetch = baseFetch;
     }
