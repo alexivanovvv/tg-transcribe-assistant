@@ -2,7 +2,8 @@ import { describe, test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { sliceOggOpus } from '../../lib/ogg.js';
 import { isHallucinatedText } from '../../lib/utils.js';
-import { transcribeAudio } from '../../lib/transcriber.js';
+import { transcribeAudio, cleanKeyterms, resetKeytermsCache } from '../../lib/transcriber.js';
+import { kvSet } from '../../lib/kv.js';
 
 // Minimal Ogg Opus stream: OpusHead, OpusTags, then one audio page per second
 function oggPage(flags, granule, sequence, body) {
@@ -124,7 +125,7 @@ describe('ElevenLabs Scribe', () => {
       if (url.includes('/getFile')) return new Response(JSON.stringify({ ok: true, result: { file_path: 'voice/a.oga', file_size: 1 } }));
       if (url.includes('/file/bot')) return new Response(buildOgg(5));
       calls.push(url);
-      if (url.includes('elevenlabs')) return scribeResponse();
+      if (url.includes('elevenlabs')) { calls.body = opts.body; return scribeResponse(); }
       return new Response(JSON.stringify({ text: 'Ответ от Whisper.', segments: [{ start: 0, end: 3, text: 'Ответ от Whisper.', avg_logprob: -0.2, no_speech_prob: 0.01 }] }));
     };
     const result = await transcribeAudio('id', { telegramBotToken: 't', whisperApiKey: 'k', elevenlabsApiKey: 'el' }, {});
@@ -159,5 +160,19 @@ describe('ElevenLabs Scribe', () => {
     const { result, calls } = await run(() => new Response(JSON.stringify({ text: '', words: [] })));
     assert.equal(calls.length, 1);
     assert.equal(result.ok, false);
+  });
+
+  test('passes the dictionary from KV as keyterms', async () => {
+    await kvSet('keyterms', ['Claude Code', 'Ponchik', 'claude code', 'слишком длинный термин из шести слов тут']);
+    resetKeytermsCache();
+    const { calls } = await run(() => new Response(JSON.stringify({ text: 'Ок.', words: [word('Ок.', 0)] })));
+    assert.deepEqual(calls.body.getAll('keyterms'), ['Claude Code', 'Ponchik']);
+    await kvSet('keyterms', null);
+    resetKeytermsCache();
+  });
+
+  test('keyterm cleanup drops invalid entries', () => {
+    assert.deepEqual(cleanKeyterms(['ok', 'a[b]', 'x'.repeat(50), '  spaced   term ']), ['ok', 'spaced term']);
+    assert.deepEqual(cleanKeyterms('nope'), []);
   });
 });
