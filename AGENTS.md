@@ -38,12 +38,17 @@ While it contains a high-level map of the directory structure to help agents nav
 │   ├── localize.js      # Multi-language translation dictionaries (en, ru, de, ukr)
 │   ├── menus.js         # Specific bot menu definitions and settings mappings
 │   ├── package.json     # Local library package configuration to enable ESM
+│   ├── insights.js      # LLM cleanup, summary and 5 reply options (private to the owner)
+│   ├── kv.js            # JSON key-value store (Netlify Blobs / memory)
+│   ├── reminders.js     # "Waiting for your reply" reminders for unanswered business voices
 │   ├── utils.js         # Transcription text chunking, Whisper token estimation, and re-exports
 │   └── webhook-settings.js # Helper functions to parse and build webhook query-string configurations
 ├── netlify/
 │   └── functions/
 │       ├── setup.js     # Netlify setup function
-│       └── webhook.js   # Netlify webhook function
+│       ├── webhook.js   # Netlify webhook function (forwards updates to the background one)
+│       ├── webhook-background.js # Processes updates with a 15 min budget
+│       └── remind.mjs   # Scheduled every 30 min: sends due reminders
 ├── src/
 │   ├── deno.js          # Deno Deploy & Val Town entry point
 │   └── index.js         # Cloudflare Workers entry point

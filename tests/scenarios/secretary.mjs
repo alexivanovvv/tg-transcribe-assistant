@@ -1,6 +1,8 @@
 import { describe, test, before, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { handleWebhook } from '../../lib/core.js';
+import { handleWebhook, chatLabel } from '../../lib/core.js';
+import { kvGet, kvSet } from '../../lib/kv.js';
+import { markPending, sendDueReminders } from '../../lib/reminders.js';
 import { clearBotInfoCache } from '../../lib/framework/webhook.js';
 import {
   MOCK_CONFIG,
@@ -1059,6 +1061,42 @@ describe('Secretary Scenarios', () => {
     const edit = recordedCalls.find(c => c.url.includes('/editMessageText'));
     assert.match(edit.json.text, /```1-\nНовый один\n```/);
     assert.equal(sentTo('98765').length, 0, 'Regenerating never writes to the conversation');
+  });
+
+  test('Reply options: five versions, header names the person with a tappable link', async () => {
+    const five = ['Да, давай', 'Частично да', 'А когда?', 'Не сейчас', 'Ок'];
+    await runBusinessVoiceWithWhisper(20057, whisperLong, {}, chatMock({ polished: 'x'.repeat(400), insights: { summary: '', replies: [...five, 'Шестой лишний'] } }));
+    const text = sentTo('11111').find(c => /💬/.test(c.json.text)).json.text;
+    assert.match(text, /```5-\nОк\n```/);
+    assert.doesNotMatch(text, /6-/);
+    assert.equal(chatLabel({ id: 1, first_name: 'Женя', username: 'evgenia_b' }), 'Женя @evgenia\\_b');
+    assert.equal(chatLabel({ id: 7, first_name: 'Аня' }), '[Аня](tg://user?id=7)');
+  });
+
+  test('Waiting reminder: incoming voice is tracked, owner reply clears it, overdue ones ping once', async () => {
+    await kvSet('pending', {});
+    await runBusinessVoiceWithWhisper(20058, whisperLong, {}, chatMock({ polished: 'x'.repeat(400), insights: { summary: '', replies: ['Ок'] } }));
+    const tracked = (await kvGet('pending'))['98765'];
+    assert.equal(tracked.to, '11111', 'Reminder goes to the connected business account');
+
+    // Owner writes anything in that chat
+    await handleWebhook(createReq({ update_id: 20059, business_message: {
+      message_id: 20059, chat: { id: 98765, type: 'private' }, from: { id: 11111, first_name: 'Owner' },
+      business_connection_id: 'conn_123', text: 'ок, завтра отвечу'
+    } }, { owner: '12345', secretary: 'on' }), MOCK_CONFIG, MOCK_CTX);
+    assert.equal((await kvGet('pending'))['98765'], undefined, 'Owner reply clears the reminder');
+
+    // Noon in Amsterdam, voice waited 5 h; at night nothing is sent
+    const noon = Date.UTC(2026, 10, 13, 11, 0);
+    await markPending(98765, { to: '11111', who: 'Friend', text: 'Когда созвон?', lang: 'ru' });
+    const pending = await kvGet('pending');
+    pending['98765'].at = noon - 5 * 3600000;
+    await kvSet('pending', pending);
+    clearHistory();
+    assert.equal(await sendDueReminders('test-token', 4, Date.UTC(2026, 10, 13, 23, 0)), 0, 'No pings at night');
+    assert.equal(await sendDueReminders('test-token', 4, noon), 1);
+    assert.match(sentTo('11111')[0].json.text, /⏰[\s\S]*Ждет ответа[\s\S]*5 ч · Friend[\s\S]*Когда созвон\?/);
+    assert.equal(await sendDueReminders('test-token', 4, noon), 0, 'Each voice reminds only once');
   });
 
   test('Output modes: switched off summary/replies and transcript-to-chat', async () => {

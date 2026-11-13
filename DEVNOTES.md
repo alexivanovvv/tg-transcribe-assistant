@@ -292,3 +292,9 @@ When the cache is cold or absent (e.g., after a Vercel cold start), the bot fall
 A GitHub Actions workflow (`.github/workflows/sync.yml`) pulls upstream updates into forks weekly. The decision script (`scripts/ci_github_fork_sync.sh`) handles scenarios like fast-forward merges, local commits ahead, and diverged histories, emitting GitHub warning/error annotations.
 
 *Verified by `tests/github_fork_sync.mjs`.*
+
+## Background processing and reply reminders
+
+- **Why a background function:** Lambda-style Netlify functions stop at 10 s, and Scribe + LLM on a 3+ minute voice gets close to that. `webhook.js` now hands every Telegram POST to `webhook-background.js` (Netlify replies 202 and lets it run up to 15 min) and answers Telegram 200 at once, which also stops Telegram retries. If the forward fails, the update is processed inline as before. `BOT_BACKGROUND=1` gives Scribe and the LLM longer timeouts there.
+- **Why reminders:** voices get lost when they are listened to and forgotten. An incoming business voice is stored in KV `pending`; any owner message in that chat clears it; `remind.mjs` (every 30 min) pings the owner once after `REMIND_HOURS` (default 4, `0` = off), only 9:00-22:00 Amsterdam time. Behavior is covered in `tests/scenarios/secretary.mjs`.
+- **Why 5 reply options:** they should cover the realistic range of reactions (yes with details, partial yes, question back, no / later, one-liner), so each is capped at 600 chars to fit one 4096-char message.
