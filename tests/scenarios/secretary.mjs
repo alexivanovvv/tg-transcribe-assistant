@@ -38,6 +38,8 @@ describe('Secretary Scenarios', () => {
     await handleWebhook(req, MOCK_CONFIG, MOCK_CTX);
     await new Promise(resolve => setTimeout(resolve, 50));
     assertMessageSent('98765', 'mock voice transcription');
+    const chatAction = recordedCalls.find(call => call.url.includes('sendChatAction'));
+    assert.equal(chatAction, undefined, 'Business chats must not show a "typing" status to the counterparty');
   });
 
   // ----------------------------------------------------

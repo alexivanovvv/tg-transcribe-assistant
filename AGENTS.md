@@ -1,5 +1,7 @@
 # AGENTS: Agent Instructions & Mandatory Rules
 
+> **Деплой:** ponch-bot.netlify.app (`netlify deploy --prod --dir=.`, автосборка из GitHub выключена) — можно выкатить версию по запросу, 15 кредитов за прод-деплой, итерации — черновым `netlify deploy`. **Открывать и проверять — локальную** (`npm run dev` → http://localhost:3000, `npm test`), прод — только если сказано иначе.
+
 This document outlines strict requirements for AI agents working on the **Telegram Voice Transcribot** codebase. 
 
 ### Purpose of this Document
